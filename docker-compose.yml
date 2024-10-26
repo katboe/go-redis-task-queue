@@ -9,6 +9,7 @@ services:
       - REDIS_PORT=${REDIS_PORT}
       - NUM_TASKS=${NUM_TASKS}
       - TASK_DELAY=${TASK_DELAY}
+      - MAX_RETRIES=${MAX_RETRIES}
     networks:
       - task-network
 

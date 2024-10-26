@@ -9,11 +9,13 @@ import (
 	"github.com/katboe/go-redis-task-queue/config"
 )
 
-func ProduceTask(name string, priority int) error {
+func ProduceTask(name string, priority int, delay int) error {
 	task := Task{
 		ID:       uuid.New().String(),
 		Name:     name,
 		Priority: priority,
+		Retries:  0,
+		Delay:    delay,
 	}
 
 	var queue string

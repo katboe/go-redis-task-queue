@@ -1,6 +1,6 @@
 # Go Redis Task Queue
 
-Simple task queue using Redis, designed to run in a Dockerized environment.
+Simple priority task queue with retrying using Redis, designed to run in a Dockerized environment.
 
 ## Prerequisites
 
@@ -23,6 +23,7 @@ Simple task queue using Redis, designed to run in a Dockerized environment.
     REDIS_PORT=6379
     TASK_DELAY=3
     NUM_TASKS=10
+    MAX_RETRIES=2
     ```
 
 ## Running the Application
