@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 
@@ -27,10 +28,10 @@ func main() {
 
 	go func() {
 		for i := 1; i <= numtask; i++ {
-			task.ProduceTask(fmt.Sprintf("Nap %d", i))
+			task.ProduceTask(fmt.Sprintf("Nap %d", i), rand.Intn(2)) // Generates priorities 0 or 1
 		}
 	}()
 
-	task.ConsmeTask(delay)
+	task.ConsumeTask(delay)
 
 }
