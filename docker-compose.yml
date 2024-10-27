@@ -10,6 +10,7 @@ services:
       - NUM_TASKS=${NUM_TASKS}
       - TASK_DELAY=${TASK_DELAY}
       - MAX_RETRIES=${MAX_RETRIES}
+      - NUM_WORKERS=${NUM_WORKERS}
     networks:
       - task-network
 

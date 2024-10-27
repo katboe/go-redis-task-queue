@@ -2,10 +2,12 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -61,37 +63,104 @@ func performTask(task Task) error {
 	}
 }
 
-func ConsumeTask(maxRetries int) {
-	for {
-		// First, try to pop a task from the high-priority queue
-		taskJSON, err := config.Rdb.RPop("high_priority_queue").Result()
-		if err != nil && err != redis.Nil {
-			log.Printf("Error retrieving high-priority task: %v", err)
-			continue
-		}
+// retrieves and logs tasks from all queues
+func LogAllNonAddressedTasks() {
+	// Retrieve high priority tasks
+	logTasksFromQueue("high_priority_queue", "High Priority Tasks")
 
-		// If no high-priority task, check the low-priority queue
-		if taskJSON == "" {
-			taskJSON, err = config.Rdb.RPop("low_priority_queue").Result()
-			if err != nil && err != redis.Nil {
-				log.Printf("Error retrieving low-priority task: %v", err)
-				continue
-			} else if err == redis.Nil {
-				fmt.Println("No tasks in low priority queue, taking a short nap...")
-				time.Sleep(2 * time.Second)
-				continue
-			}
-		}
+	// Retrieve low priority tasks
+	logTasksFromQueue("low_priority_queue", "Low Priority Tasks")
 
-		if taskJSON != "" {
-			var task Task
-			if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
-				log.Printf("Error unmarshalling task: %v", err)
-				continue
-			}
-			// Process the task
-			processTask(task, maxRetries)
-		}
+	// Retrieve failed tasks
+	logTasksFromQueue("failed_queue", "Failed Tasks")
+}
+
+// logs the tasks from a specific queue
+func logTasksFromQueue(queueName string, label string) {
+	tasks, err := config.Rdb.LRange(queueName, 0, -1).Result()
+	if err != nil {
+		log.Printf("Error retrieving tasks from %s: %v", label, err)
+		return
 	}
 
+	if len(tasks) == 0 {
+		log.Printf("No tasks in %s.", label)
+		return
+	}
+
+	log.Printf("%s:", label)
+	for _, taskJSON := range tasks {
+		var task Task
+		if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
+			log.Printf("Error unmarshalling task from %s: %v", label, err)
+			continue
+		}
+		log.Printf("Task: %s, Priority: %d, Retries: %d", task.Name, task.Priority, task.Retries)
+	}
+}
+
+func ConsumeTask(ctx context.Context, maxRetries int, numWorkers int) {
+	taskChannel := make(chan Task)
+
+	var wg sync.WaitGroup
+
+	//start worker goroutines
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case task, ok := <-taskChannel:
+					if !ok {
+						return // Channel closed
+					}
+					processTask(task, maxRetries)
+				case <-ctx.Done():
+					return // Exit on context cancellation
+				}
+			}
+		}()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			close(taskChannel) // Close the channel before exit
+			wg.Wait()          // Wait for all workers to finish
+			log.Println("All tasks processed.")
+			LogAllNonAddressedTasks() // Log any failed tasks
+			return
+		default:
+			// First, try to pop a task from the high-priority queue
+			taskJSON, err := config.Rdb.RPop("high_priority_queue").Result()
+			if err != nil && err != redis.Nil {
+				log.Printf("Error retrieving high-priority task: %v", err)
+				continue
+			}
+
+			// If no high-priority task, check the low-priority queue
+			if taskJSON == "" {
+				taskJSON, err = config.Rdb.RPop("low_priority_queue").Result()
+				if err != nil && err != redis.Nil {
+					log.Printf("Error retrieving low-priority task: %v", err)
+					continue
+				} else if err == redis.Nil {
+					fmt.Println("No tasks in low priority queue, taking a short nap...")
+					time.Sleep(2 * time.Second)
+					continue
+				}
+			}
+
+			if taskJSON != "" {
+				var task Task
+				if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
+					log.Printf("Error unmarshalling task: %v", err)
+					continue
+				}
+				// Send the task to the task channel for processing by workers
+				taskChannel <- task
+			}
+		}
+	}
 }
