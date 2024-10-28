@@ -9,3 +9,4 @@ RUN go mod download
 RUN go build -o task-queue-app
 
 CMD ["./task-queue-app"]
+
